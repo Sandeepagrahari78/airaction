@@ -44,3 +44,7 @@ next-env.d.ts
 /.codex/
 /outputs/
 /work/
+
+# Local compiler cache and private hosting metadata
+*.tsbuildinfo
+/.openai/

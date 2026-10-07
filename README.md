@@ -1,6 +1,6 @@
 # AirAction
 
-A private, working demonstration application for coordinated air-pollution response in India: **report → triage → approve → assign → act → verify → reopen**.
+AirAction is a demonstration application for coordinated air-pollution response in India: **report → triage → approve → assign → act → verify → reopen**.
 
 This release has durable data, server-enforced workflow rules and file storage. It is a product demonstrator, not a government-authorised enforcement system or evidence of an environmental improvement.
 
@@ -85,7 +85,7 @@ npm run dev
 
 Use the URL printed in the terminal. A clean checkout uses the portable profile on port 5173. Local development has a development-only identity fallback; production requires the hosting platform's authenticated-user header. Do not expose a development server publicly.
 
-The initial migration is a **one-time** setup step. Generate and inspect NEW migrations for later schema changes; do not replay initial SQL or rewrite applied migrations. No external API key is needed for this demonstration. D1 and R2 logical bindings are in `.openai/hosting.json`; the hosting platform manages production resources.
+The initial migration is a **one-time** setup step. Generate and inspect NEW migrations for later schema changes; do not replay initial SQL or rewrite applied migrations. No external API key is needed for this demonstration. D1 and R2 logical bindings are in `deployment/hosting.json`; production resource IDs are supplied by the deployment environment. The public source does not include a workspace-specific deployment ID.
 
 ## Verification
 

@@ -29,12 +29,12 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-export function sites({ mockAuth = true } = {}): Plugin {
+export function deployment({ mockAuth = true } = {}): Plugin {
   let root = process.cwd();
   let command: "build" | "serve" = "build";
 
   return {
-    name: "sites",
+    name: "airaction-deployment",
     configResolved(config) {
       root = config.root;
       command = config.command;
@@ -43,7 +43,7 @@ export function sites({ mockAuth = true } = {}): Plugin {
       if (!mockAuth) return;
       const secure = Boolean(server.config.server.https);
 
-      server.config.logger.info(`Sites local sign-in: ${localEmail}`);
+      server.config.logger.info(`AirAction local sign-in: ${localEmail}`);
       server.middlewares.use((request, response, next) => {
         for (const name of Object.keys(request.headers)) {
           if (name.startsWith("oai-authenticated-user-")) {
@@ -173,8 +173,8 @@ export function sites({ mockAuth = true } = {}): Plugin {
     async closeBundle() {
       if (command !== "build") return;
 
-      const outputDirectory = resolve(root, "dist", ".openai");
-      const hostingConfig = resolve(root, ".openai", "hosting.json");
+      const outputDirectory = resolve(root, "dist", "deployment");
+      const hostingConfig = resolve(root, "deployment", "hosting.json");
       const drizzleSource = resolve(root, "drizzle");
 
       await rm(outputDirectory, { recursive: true, force: true });
