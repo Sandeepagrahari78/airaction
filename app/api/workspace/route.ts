@@ -1,0 +1,5 @@
+import { handle, identity, db, json } from '@/lib/server';
+import { initialize } from '@/lib/seed';
+export async function GET(req: Request) { return handle(async () => { const w = identity(req); await initialize(w); const [cases, evidence, audit, observations, workspace] = await db().batch([db().prepare('SELECT * FROM cases WHERE workspace=? ORDER BY created_at DESC').bind(w), db().prepare('SELECT id,case_id,note,filename,mime,size,checksum,actor,created_at,sample FROM evidence WHERE workspace=? ORDER BY created_at DESC').bind(w), db().prepare('SELECT id,case_id,actor,operation,detail,created_at FROM audit WHERE workspace=? ORDER BY created_at DESC LIMIT 500').bind(w), db().prepare('SELECT * FROM observations WHERE workspace=? ORDER BY observed_at DESC LIMIT 1000').bind(w), db().prepare('SELECT created_at FROM workspaces WHERE id=?').bind(w)]); return json({ cases: cases.results, evidence: evidence.results, audit: audit.results, observations: observations.results, mode: 'demonstration', user: req.headers.get('oai-authenticated-user-email') || 'Local preview', snapshotAt: (workspace.results[0] as {
+        created_at: string;
+    }).created_at }); }); }

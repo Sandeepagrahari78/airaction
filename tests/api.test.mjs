@@ -1,0 +1,53 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import {createRequire} from 'node:module';
+const require=createRequire(import.meta.url), wranglerRequire=createRequire(require.resolve('wrangler/package.json'));
+const {build}=wranglerRequire('esbuild');const {Miniflare}=wranglerRequire('miniflare');
+await fs.mkdir('.sites-runtime/test',{recursive:true});
+await build({entryPoints:['tests/api-worker.ts'],outfile:'.sites-runtime/test/api-worker.mjs',bundle:true,format:'esm',platform:'browser',target:'es2022',external:['cloudflare:workers'],define:{'import.meta.env.DEV':'false'},logLevel:'silent'});
+const mf=new Miniflare({scriptPath:'.sites-runtime/test/api-worker.mjs',modules:true,compatibilityDate:'2026-05-15',compatibilityFlags:['nodejs_compat'],d1Databases:['DB'],r2Buckets:['BUCKET']});
+let count=0;
+async function req(path,options={}){const {role='Coordinator',user='test-owner',method='GET',body,headers={},form}=options;const request=new Request('https://airaction.test'+path,{method,headers:{...(user?{'oai-authenticated-user-id':user,'oai-authenticated-user-email':user+'@example.test'}:{}),'x-demo-role':role,'x-airaction-request':'1',...(!form&&body?{'Content-Type':'application/json'}:{}),...headers},body:form|| (body?JSON.stringify(body):undefined)});return mf.dispatchFetch(request.url,{method,headers:Object.fromEntries(request.headers),body:method==='GET'?undefined:await request.arrayBuffer()})}
+async function expect(path,options,status){const r=await req(path,options);const x=await r.json();assert.equal(r.status,status,JSON.stringify(x));count++;return x}
+try{
+ const db=await mf.getD1Database('DB');const sql=await fs.readFile('drizzle/0000_real_polaris.sql','utf8');for(const s of sql.split('--> statement-breakpoint'))if(s.trim())await db.prepare(s.trim()).run();
+ await expect('/api/workspace',{user:null},401);
+ const init=await expect('/api/workspace',{},200);assert.equal(init.cases.length,8);assert.equal(init.observations.length,32);
+ const id=crypto.randomUUID(),record={id,title:'Integration test road dust',description:'Loose material observed along a demonstration road.',source:'Road dust',location:'Test location',district:'East Delhi',priority:'High'};
+ await expect('/api/cases',{method:'POST',body:record,headers:{Origin:'https://attacker.test'}},403);
+ await expect('/api/cases',{method:'POST',role:'Field team',body:record},403);
+ await expect('/api/cases',{method:'POST',body:{...record,priority:'Extreme'}},400);
+ await expect('/api/cases',{method:'POST',body:record},201);
+ await expect('/api/cases',{method:'POST',body:record},200);
+ let ws=await expect('/api/workspace',{},200);assert.equal(ws.cases.filter(c=>c.id===id).length,1);
+ const path='/api/cases/'+id;
+ await expect(path,{method:'PATCH',user:'other-owner',body:{operation:'triage',version:1}},404);
+ await expect(path,{method:'PATCH',body:{operation:'verify',version:1,reason:'Not allowed to skip stages'}},403);
+ await expect(path,{method:'PATCH',body:{operation:'triage',version:1}},200);
+ await expect(path,{method:'PATCH',body:{operation:'approve',version:1,reason:'Approved for a controlled field response'}},409);
+ await expect(path,{method:'PATCH',body:{operation:'approve',version:2,reason:'Approved for a controlled field response'}},200);
+ await expect(path,{method:'PATCH',body:{operation:'assign',version:3}},400);
+ await expect(path,{method:'PATCH',body:{operation:'assign',version:3,owner:'Dust response unit',dueAt:new Date(Date.now()+3600000).toISOString()}},200);
+ await expect(path,{method:'PATCH',role:'Field team',body:{operation:'start',version:4}},200);
+ await expect(path,{method:'PATCH',role:'Field team',body:{operation:'submit',version:5,reason:'Collected loose material from the road edge'}},400);
+ const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aVxkAAAAASUVORK5CYII=','base64');
+ const eid=crypto.randomUUID();const form=new FormData();form.set('id',eid);form.set('caseId',id);form.set('note','Collected loose material and recorded receiving facility.');form.set('file',new Blob([png],{type:'image/png'}),'field.png');
+ await expect('/api/evidence',{method:'POST',role:'Field team',form},201);
+ const f=await req('/api/evidence/'+eid);assert.equal(f.status,200);assert.equal(Buffer.compare(Buffer.from(await f.arrayBuffer()),png),0);count++;
+ await expect('/api/evidence/'+eid,{user:'other-owner'},404);
+ await expect(path,{method:'PATCH',role:'Field team',body:{operation:'submit',version:5,reason:'Collected loose material with receiving record'}},200);
+ await expect(path,{method:'PATCH',role:'Field team',body:{operation:'verify',version:6,reason:'Trying to verify my own work'}},403);
+ await expect(path,{method:'PATCH',role:'Verifier',body:{operation:'verify',version:6,reason:'Independent inspection confirms the work completed'}},200);
+ await expect(path,{method:'PATCH',role:'Verifier',body:{operation:'reopen',version:7,reason:'Material has reappeared; investigate recurrence'}},200);
+ await expect(path,{method:'PATCH',role:'Field team',body:{operation:'submit',version:8,reason:'Attempt to use old evidence from earlier work'}},400);
+ const record2={...record,id:crypto.randomUUID(),title:'Concurrent triage test'};await expect('/api/cases',{method:'POST',body:record2},201);
+ const concurrent=await Promise.all([1,2].map(()=>req('/api/cases/'+record2.id,{method:'PATCH',body:{operation:'triage',version:1}})));assert.deepEqual(concurrent.map(r=>r.status).sort(),[200,409]);count++;
+ const rows=[{station:'Test station',pollutant:'PM2.5',value:42,unit:'µg/m³',observed_at:new Date(Date.now()-600000).toISOString(),provider:'Test provider',averaging:'1 hour'}];
+ await expect('/api/observations',{method:'POST',body:{rows:[{...rows[0],value:null}]}},400);
+ await expect('/api/observations',{method:'POST',body:{rows:[{...rows[0],observed_at:new Date(Date.now()+3600000).toISOString()}]}},400);
+ assert.equal((await expect('/api/observations',{method:'POST',body:{rows}},200)).inserted,1);
+ assert.equal((await expect('/api/observations',{method:'POST',body:{rows}},200)).inserted,0);
+ const other=await expect('/api/workspace',{user:'other-owner'},200);assert.equal(other.cases.length,8);assert(!other.cases.some(c=>c.id===id));
+ const exp=await expect('/api/export',{},200);assert(exp.audit.some(a=>a.case_id===id&&a.operation==='verify'));assert.equal(exp.audit.filter(a=>a.case_id===record2.id&&a.operation==='triage').length,1);assert.equal(exp.cases.find(c=>c.id===id).reopened,1);
+ console.log(`PASS: ${count} API checks covering identity, isolation, lifecycle, concurrency, R2 attachment persistence, CSV validation, deduplication and audit exports.`);
+}finally{await mf.dispose()}
